@@ -21,6 +21,8 @@ a_agent = Agent(model,
                 system_prompt="given you the question, returns a solution with explanations",
                 tools=[])
 
+g_agent = Agent(model, system_prompt="Answer the question precisely and very understandable", tools=[])
+
 class Evaluation(BaseModel):
     score: int
     feedback: str
@@ -61,7 +63,12 @@ def generate_questions(data: str, amount: int) -> list[dict]:
         output.append({"question": q, "answer": s})
     return output
 
-
+def general_questions(data : str):
+    try:
+        resp = g_agent.run_sync(str(data))
+        return resp.output
+    except Exception as e:
+        return f"Error: {e}"
 
 # 3. THE FLASK ENDPOINT (The "Receiver")
 @app.route('/generate', methods=['POST'])
@@ -89,6 +96,12 @@ def handle_submit():
         eval_result = verify(item['user_answer'], item['correct_answer'])
         final.append({"score": eval_result.score, "feedback": eval_result.feedback})
     return jsonify(final)
+
+@app.route('/prompt', methods=['POST'])
+def tutorprompt():
+    data = request.get_json()
+    return general_questions(data)
+
 
 # 5. START THE SERVER ON PORT 8080
 if __name__ == '__main__':
