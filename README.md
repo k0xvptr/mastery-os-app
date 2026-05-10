@@ -1,3 +1,0 @@
-# MasteryOS-APP
-
-## Problem Statement
