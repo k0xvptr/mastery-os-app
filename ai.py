@@ -17,7 +17,7 @@ a_agent = Agent(model,
               tools=[])
 
 
-def question_agent(datas):
+def question_agent(datas:str) -> str:
     #question_generation_agent
     user_input = str(datas)
     try:
@@ -27,7 +27,7 @@ def question_agent(datas):
         return f"Error occurred: {e}"
 
 
-def feedback_agent(datas):
+def feedback_agent(datas:str) -> str:
     user_input = str(datas)
     try:
         resp = f_agent.run_sync(user_input)
@@ -36,7 +36,7 @@ def feedback_agent(datas):
         return f"Error occurred: {e}"
 
 
-def solution_agent(datas):
+def solution_agent(datas:str) -> str:
     user_input = str(datas)
     try:
         resp = a_agent.run_sync(user_input)
@@ -44,3 +44,10 @@ def solution_agent(datas):
     except Exception as e:
         return f"Error occurred: {e}"
 
+
+def generate_questions(data:str, amount:int) -> dict:
+    output = {}
+    for _ in range(amount):
+        output[question_agent(data)] = solution_agent(data)
+
+    return output
