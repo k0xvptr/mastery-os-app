@@ -44,7 +44,7 @@ def generate_questions(data: str, amount: int) -> list[dict]:
         # Using your existing logic to pair a question with a solution
         q = question_agent(data)
         s = solution_agent(data)
-        output.append({"question": q, "solution": s})
+        output.append({"question": q, "answer": s})
     return output
 
 
