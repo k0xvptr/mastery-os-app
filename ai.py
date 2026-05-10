@@ -99,5 +99,3 @@ def handle_submit():
 if __name__ == '__main__':
     # '0.0.0.0' allows other computers on the network to find you
     app.run(host='0.0.0.0', port=8080)
-
-app = Flask(__name__)
