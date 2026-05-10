@@ -20,6 +20,13 @@ a_agent = Agent(model,
                 system_prompt="given you the question, returns a solution with explanations",
                 tools=[])
 
+verify_agent = Agent(model, 
+                     system_prompt="""given you 2 answers, the one that is from the user and one that is the original answer. 
+                     Rate the user's answer from 0 to 5 and explain why. Output in the format ([score] [reasoning]). Please don't include the brackets
+                     """,
+                     tools=[])
+
+
 
 # 2. YOUR LOGIC FUNCTIONS
 def question_agent(datas: str) -> str:
@@ -46,6 +53,13 @@ def generate_questions(data: str, amount: int) -> list[dict]:
         s = solution_agent(data)
         output.append({"question": q, "answer": s})
     return output
+
+def verify(user_answer, answer):
+  try:
+    resp = verify_agent.run_sync(f"User answer: {user_answer}. Original Answer: {answer}")
+    return resp.output
+  except Exception as e:
+    return f"Error: {e}"
 
 
 # 3. THE FLASK ENDPOINT (The "Receiver")
@@ -79,11 +93,16 @@ app = Flask(__name__)
 def handle_submit():
     # .get_json() automatically converts the incoming JSON into a Python Dictionary
     data = request.get_json()
-
-    print(f"Received dictionary: {data}")
-    print(f"Accessing a key: {data.get('name')}")
-
-    return jsonify({"status": "success", "message": "I got it!"}), 200
+    final = []
+    for item in data:
+      user_val = item['user_answer']
+      correct_val = item['correct_answer']
+      
+      result = verify(user_val, correct_val)
+      result.split(" ")
+      final.append({"score" : int(result[0]), "feedback" : result[1]})
+    
+    return jsonify(final)
 
 
 if __name__ == '__main__':
