@@ -30,3 +30,18 @@ type UserData struct {
 	Cards []Card `json:"cards"`;
 	Attempts []Attempt `json:"attempts"`;
 }
+
+type GameSubmission struct {
+	CardIDs []string `json:"card_ids"`;
+	UserAnswers []string `json:"user_answers"`;
+}
+
+type Comparison struct {
+	UserAnswer string `json:"user_answer"`;
+	CorrectAnswer string `json:"correct_answer"`;
+}
+
+type AIResp struct {
+	Score int `json:"score"`;
+	Feedback string `json:"feedback"`;
+}

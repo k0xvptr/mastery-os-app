@@ -8,17 +8,23 @@ import (
 	"github.com/k0xvptr/mastery-os-app/internal/engine"
 )
 
-const Path = "/data/db.json";
+const Path = "data/db.json";
 
 func LoadState() engine.UserData {
 	data, err := os.ReadFile(Path);	
 	if (err != nil) {
 		if errors.Is(err, fs.ErrNotExist) {
-			os.Create("db.json");
+			return engine.UserData {
+				Cards: []engine.Card{},
+				Attempts: []engine.Attempt{},
+			}
 		}
 	}
 	var UserData engine.UserData;
-	json.Unmarshal(data, &UserData);
+	err = json.Unmarshal(data, &UserData);
+	if (err != nil) {
+		return engine.UserData{};
+	}
 	return UserData;
 }
 
