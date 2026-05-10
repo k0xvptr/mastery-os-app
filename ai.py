@@ -75,8 +75,8 @@ if __name__ == '__main__':
 app = Flask(__name__)
 
 
-@app.route('/my-endpoint', methods=['POST'])
-def handle_post():
+@app.route('/mini-game/submit', methods=['POST'])
+def handle_submit():
     # .get_json() automatically converts the incoming JSON into a Python Dictionary
     data = request.get_json()
 
