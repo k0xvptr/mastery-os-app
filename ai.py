@@ -46,6 +46,11 @@ def solution_agent(datas:str) -> str:
 
 
 def generate_questions(data:str, amount:int) -> dict:
+    """
+    :param data: The text we are being questioned on
+    :param amount: Number of questions to generate
+    :return: Dictionary in form {question: answer}
+    """
     output = {}
     for _ in range(amount):
         output[question_agent(data)] = solution_agent(data)
