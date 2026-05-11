@@ -28,13 +28,12 @@ class Evaluation(BaseModel):
     feedback: str
 
 verify_agent = Agent(
-    model,
-    result_type=Evaluation, # This forces the AI to return JSON matching the class
+    model, # This forces the AI to return JSON matching the class
     system_prompt="Rate the user's answer from 0 to 5 and explain why."
 )
 
 def verify(user_answer, answer):
-    resp = verify_agent.run_sync(f"User answer: {user_answer}. Original Answer: {answer}")
+    resp = verify_agent.run_sync(f"User answer: {user_answer}. Original Answer: {answer}", result_type=Evaluation)
     return resp.data  # This is now a Python object with .score and .feedback
 
 # 2. YOUR LOGIC FUNCTIONS
