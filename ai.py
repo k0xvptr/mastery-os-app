@@ -79,14 +79,14 @@ def receive_from_kingsley():
     # Extracting the 'prompt' and 'subject' sent by Kingsley
     # If they don't send an 'amount', we default to 1
     prompt_text = incoming_data.get("subject", '')
-    count = incoming_data.get("amount", 1)
+    count = int(incoming_data.get("amount", 1))
 
     # Process using your agents
-    final_result = generate_questions(prompt_text, int(count))
+    final_result = generate_questions(prompt_text, count)
 
     # 4. SEND DATA BACK (The "Response")
     # This sends the {question: answer} dict back to Kingsley immediately
-    return jsonify(final_result), 200
+    return jsonify(final_result)
 
 @app.route('/mini-game/submit', methods=['POST'])
 def handle_submit():
