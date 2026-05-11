@@ -77,8 +77,8 @@ def receive_from_kingsley():
 
     # Extracting the 'prompt' and 'subject' sent by Kingsley
     # If they don't send an 'amount', we default to 1
-    prompt_text = incoming_data.get('prompt', '')
-    count = incoming_data.get('amount', 1)
+    prompt_text = incoming_data.get("subject", '')
+    count = incoming_data.get("amount", 1)
 
     # Process using your agents
     final_result = generate_questions(prompt_text, count)
