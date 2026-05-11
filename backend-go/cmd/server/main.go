@@ -27,13 +27,13 @@ func HandleSubject(w http.ResponseWriter, r *http.Request) {
 		
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData));
 		if (err != nil) {
-			fmt.Printf("JSON Decode Error: %v\n", err);
 			http.Error(w, "AI Service Down", http.StatusInternalServerError);
 		}
 		defer resp.Body.Close();
 
 		var newCards []engine.Card;
 		if err := json.NewDecoder(resp.Body).Decode(&newCards); err != nil {
+			fmt.Printf("JSON Decode Error: %v\n", err);
 			http.Error(w, "Failed to process AI response", http.StatusInternalServerError);
 			return;
 		}
