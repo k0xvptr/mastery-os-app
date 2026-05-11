@@ -54,7 +54,7 @@ def solution_agent(datas: str) -> str:
         return f"Error: {e}"
 
 
-def generate_questions(data: str, amount: int) -> list[dict]:
+def generate_questions(data: str, amount: int, concept : str) -> list[dict]:
     output = []
     for _ in range(amount):
         # Using your existing logic to pair a question with a solution
@@ -83,7 +83,7 @@ def receive_from_kingsley():
     concept = incoming_data.get("concept", "random")
 
     # Process using your agents
-    final_result = generate_questions(prompt_text, count)
+    final_result = generate_questions(prompt_text, count, concept)
 
     # 4. SEND DATA BACK (The "Response")
     # This sends the {question: answer} dict back to Kingsley immediately
