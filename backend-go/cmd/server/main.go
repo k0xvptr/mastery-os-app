@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"encoding/json"
 	"github.com/k0xvptr/mastery-os-app/internal/db"
-	"io"
 	"time"
 	"fmt"
 	"strings"
@@ -120,7 +119,10 @@ func HandleAITutor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Cannot decode prompt from user", http.StatusInternalServerError);
 		return;
 	}
-	resp, err := http.Post("http://localhost:8080/prompt", "application/json", strings.NewReader(prompt));
+	data := map[string]string{ "prompt" : prompt };
+	jsonData, _ := json.Marshal(data);
+
+	resp, err := http.Post("http://localhost:8080/prompt", "application/json", bytes.NewBuffer(jsonData));
 	if err != nil {
 		http.Error(w, "AI Offline", 503);
 		return;
