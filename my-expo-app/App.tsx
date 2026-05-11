@@ -47,7 +47,7 @@ const SUBJECT_CODE: Record<string, string> = {
 // GET /mini-game/subject?subject=ENG  — Go fetches from Python & stores cards
 const fetchQuestions = async (subject: string): Promise<FlashCard[]> => {
   const code = SUBJECT_CODE[subject] ?? subject;
-  const response = await axios.get(`${BASE_URL}/mini-game/subject`, {
+  const response = await axios.get(`${BASE_URL}/mini-games/subject`, {
     params: { subject: code },
   });
   // Go returns the array directly
@@ -60,7 +60,7 @@ const submitSession = async (
   cardIds: string[],
   userAnswers: string[]
 ): Promise<{ score: number; feedback: string }[]> => {
-  const response = await axios.post(`${BASE_URL}/mini-game/submit-answer`, {
+  const response = await axios.post(`${BASE_URL}/mini-games/submit-answer`, {
     card_ids: cardIds,
     user_answers: userAnswers,
   });
@@ -71,11 +71,10 @@ const submitSession = async (
 const sendTutorMessage = async (message: string): Promise<string> => {
   const response = await axios.post(
     `${BASE_URL}/tutor/chat`,
-    { message },
-    { responseType: 'text' }
+    { message }
   );
   // Go returns plain text; axios may still parse it as a string
-  return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+  return response.data.reply
 };
 
 // ─── SUBJECT COLOR THEMES ─────────────────────────────────────────────────────
