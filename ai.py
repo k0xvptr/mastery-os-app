@@ -1,109 +1,106 @@
-import requests
+import uuid
 from flask import Flask, request, jsonify
+from pydantic import BaseModel
+from pydantic_ai import Agent
 from pydantic_ai.models.google import GoogleModel
 from dotenv import load_dotenv
-from pydantic_ai import Agent
-from pydantic import BaseModel
-import uuid
 
-# 1. SETUP & AGENT INITIALIZATION
 load_dotenv()
 model = GoogleModel("gemini-3-flash-preview")
-
 app = Flask(__name__)
 
-q_agent = Agent(model,
-                system_prompt="generates a question based on data I give you (subject, uploaded files, JSON)",
-                tools=[])
-f_agent = Agent(model,
-                system_prompt="given you data on what the user did bad, returnss feedback on how to improve",
-                tools=[])
-a_agent = Agent(model,
-                system_prompt="given you the question, returns a solution with explanations",
-                tools=[])
 
-g_agent = Agent(model, system_prompt="Answer the question precisely and make it very understandable", tools=[])
+# --- 1. DEFINE THE STRUCTURE ---
+
+class QAPair(BaseModel):
+    """Schema for a single question and its corresponding answer."""
+    question: str
+    answer: str
+
+
+class QAList(BaseModel):
+    """Schema for a list of QA pairs."""
+    questions: list[QAPair]
+
 
 class Evaluation(BaseModel):
     score: int
     feedback: str
 
+
+# --- 2. INITIALIZE AGENTS ---
+
+# Unified generator agent
+generator_agent = Agent(
+    model,
+    result_type=QAList,
+    system_prompt=(
+        "You are an educational assistant. Based on the provided subject or data, "
+        "generate the requested number of high-quality questions and their "
+        "corresponding detailed solutions/explanations."
+    )
+)
+
 verify_agent = Agent(
-    model, # This forces the AI to return JSON matching the class
+    model,
+    result_type=Evaluation,
     system_prompt="Rate the user's answer from 0 to 5 and explain why."
 )
 
-def verify(user_answer, answer):
-    resp = verify_agent.run_sync(f"User answer: {user_answer}. Original Answer: {answer}", result_type=Evaluation)
-    return resp.data  # This is now a Python object with .score and .feedback
+g_agent = Agent(model, system_prompt="Answer the question precisely and make it very understandable.")
 
-# 2. YOUR LOGIC FUNCTIONS
-def question_agent(datas: str) -> str:
+
+# --- 3. LOGIC FUNCTIONS ---
+
+def generate_questions_logic(data: str, amount: int) -> list[dict]:
     try:
-        resp = q_agent.run_sync(str(datas))
-        return resp.output
+        # One single call to the LLM to get 'amount' of Q&A pairs
+        resp = generator_agent.run_sync(f"Generate {amount} questions about: {data}")
+
+        # Format the output to include the UUIDs your frontend expects
+        output = []
+        for item in resp.data.questions:
+            output.append({
+                "id": str(uuid.uuid4()),
+                "question": item.question,
+                "answer": item.answer
+            })
+        return output
     except Exception as e:
-        return f"Error: {e}"
+        print(f"Error generating questions: {e}")
+        return []
 
 
-def solution_agent(datas: str) -> str:
-    try:
-        resp = a_agent.run_sync(str(datas))
-        return resp.output
-    except Exception as e:
-        return f"Error: {e}"
+# --- 4. ENDPOINTS ---
 
-
-def generate_questions(data: str, amount: int) -> list[dict]:
-    output = []
-    for _ in range(amount):
-        # Using your existing logic to pair a question with a solution
-        q = question_agent(data)
-        s = solution_agent(data)
-        output.append({"question": q, "answer": s, "id" : str(uuid.uuid4())})
-    return output
-
-def general_questions(data : str):
-    try:
-        resp = g_agent.run_sync(str(data))
-        return resp.output
-    except Exception as e:
-        return f"Error: {e}"
-
-# 3. THE FLASK ENDPOINT (The "Receiver")
 @app.route('/generate', methods=['POST'])
 def receive_from_kingsley():
-    # This turns the incoming JSON directly into a Python Dict
     incoming_data = request.get_json()
-
-    # Extracting the 'prompt' and 'subject' sent by Kingsley
-    # If they don't send an 'amount', we default to 1
-    prompt_text = incoming_data.get("subject", '')
+    prompt_text = incoming_data.get("subject", 'General Knowledge')
     count = int(incoming_data.get("amount", 1))
 
-    # Process using your agents
-    final_result = generate_questions(prompt_text, count)
-
-    # 4. SEND DATA BACK (The "Response")
-    # This sends the {question: answer} dict back to Kingsley immediately
+    final_result = generate_questions_logic(prompt_text, count)
     return jsonify(final_result)
+
 
 @app.route('/mini-game/submit', methods=['POST'])
 def handle_submit():
     data = request.get_json()
     final = []
     for item in data:
-        eval_result = verify(item['user_answer'], item['correct_answer'])
-        final.append({"score": eval_result.score, "feedback": eval_result.feedback})
+        resp = verify_agent.run_sync(
+            f"User answer: {item['user_answer']}. Original Answer: {item['correct_answer']}"
+        )
+        final.append({"score": resp.data.score, "feedback": resp.data.feedback})
     return jsonify(final)
+
 
 @app.route('/prompt', methods=['POST'])
 def tutorprompt():
     data = request.get_json()
-    return general_questions(data)
+    resp = g_agent.run_sync(str(data))
+    return resp.data
 
 
-# 5. START THE SERVER ON PORT 8080
 if __name__ == '__main__':
-    # '0.0.0.0' allows other computers on the network to find you
     app.run(host='0.0.0.0', port=8080)
