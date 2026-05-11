@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"io"
 	"time"
+	"fmt"
 )
 
 func HandleSubject(w http.ResponseWriter, r *http.Request) {
@@ -138,5 +139,8 @@ func main() {
 	http.HandleFunc("/tutor/chat", HandleAITutor);
 
 	port := ":8081";
-	http.ListenAndServe(port, nil);
+	err := http.ListenAndServe(port, nil);
+	if err != nil {
+		fmt.Printf("Server failed to start: %v\n", err);
+	}
 }
