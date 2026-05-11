@@ -21,12 +21,13 @@ func HandleSubject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid Subject", http.StatusNotFound);
 	} else {
 		url := "http://localhost:8080/generate";
-		data := map[string]string{ "subject": subjectName, "amount" : "Generate 5 Cards" };
+		data := map[string]string{ "subject": subjectName, "amount" : "5" };
 
 		jsonData, _ := json.Marshal(data);
 		
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData));
 		if (err != nil) {
+			fmt.Printf("JSON Decode Error: %v\n", err);
 			http.Error(w, "AI Service Down", http.StatusInternalServerError);
 		}
 		defer resp.Body.Close();
