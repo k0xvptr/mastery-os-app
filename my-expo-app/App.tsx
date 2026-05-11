@@ -21,40 +21,61 @@ cssInterop(LinearGradient, { className: 'style' });
 configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-type FlashCard = { question: string; answer: string };
+// id is required — Go backend stores cards by ID and submit needs it
+type FlashCard = { id: string; question: string; answer: string };
 type CardResult = {
   card: FlashCard;
   userAnswer: string;
   feedback: string | null;
+  score: number | null;
   isLoading: boolean;
 };
 
 // ─── BASE URL ─────────────────────────────────────────────────────────────────
+// Go middleware runs on 8081. On a real device replace with your Mac's LAN IP.
 const BASE_URL = 'http://localhost:8081';
+
+// Go maps display names → the subject codes it accepts
+const SUBJECT_CODE: Record<string, string> = {
+  English: 'ENG',
+  Math: 'MATH',
+  Science: 'SCI',
+};
 
 // ─── API HELPERS ──────────────────────────────────────────────────────────────
 
-
+// GET /mini-game/subject?subject=ENG  — Go fetches from Python & stores cards
 const fetchQuestions = async (subject: string): Promise<FlashCard[]> => {
-  const response = await axios.get(`${BASE_URL}/mini-games/subject`, {
-    params: { subject },
+  const code = SUBJECT_CODE[subject] ?? subject;
+  const response = await axios.get(`${BASE_URL}/mini-game/subject`, {
+    params: { subject: code },
   });
-
-  return response.data.questions ?? response.data;
+  // Go returns the array directly
+  return Array.isArray(response.data) ? response.data : response.data.questions ?? [];
 };
 
-const gradeAnswer = async (question: string, answer: string, subject: string): Promise<string> => {
-  const response = await axios.post(`${BASE_URL}/mini-games/grade`, {
-    subject,
-    question,
-    answer,
+// POST /mini-game/submit-answer  — batch all card IDs + answers at session end
+// Go returns [{ score, feedback }, ...] in the same order
+const submitSession = async (
+  cardIds: string[],
+  userAnswers: string[]
+): Promise<{ score: number; feedback: string }[]> => {
+  const response = await axios.post(`${BASE_URL}/mini-game/submit-answer`, {
+    card_ids: cardIds,
+    user_answers: userAnswers,
   });
-  return response.data.feedback ?? response.data;
+  return response.data;
 };
 
+// POST /tutor/chat  — Go proxies to Python /prompt and streams back plain text
 const sendTutorMessage = async (message: string): Promise<string> => {
-  const response = await axios.post(`${BASE_URL}/tutor/chat`, { message });
-  return response.data.reply ?? response.data;
+  const response = await axios.post(
+    `${BASE_URL}/tutor/chat`,
+    { message },
+    { responseType: 'text' }
+  );
+  // Go returns plain text; axios may still parse it as a string
+  return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
 };
 
 // ─── SUBJECT COLOR THEMES ─────────────────────────────────────────────────────
@@ -69,13 +90,13 @@ const SUBJECT_COLORS: Record<
 
 // ─── FLASHCARD GAME ───────────────────────────────────────────────────────────
 function FlashcardGame({
-  subject,
-  isLight,
-  textColor,
-  subText,
-  onBack,
-  onSessionComplete,
-}: {
+                         subject,
+                         isLight,
+                         textColor,
+                         subText,
+                         onBack,
+                         onSessionComplete,
+                       }: {
   subject: string;
   isLight: boolean;
   textColor: string;
@@ -88,8 +109,9 @@ function FlashcardGame({
   const [cardIndex, setCardIndex] = React.useState(0);
   const [userAnswer, setUserAnswer] = React.useState('');
   const [submitted, setSubmitted] = React.useState(false);
-  const [feedback, setFeedback] = React.useState<string | null>(null);
-  const [isFeedbackLoading, setIsFeedbackLoading] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  // Answers collected during the session — sent as a batch when "Finish" is pressed
+  const [pendingAnswers, setPendingAnswers] = React.useState<{ card: FlashCard; userAnswer: string }[]>([]);
   const [results, setResults] = React.useState<CardResult[]>([]);
   const [done, setDone] = React.useState(false);
   const [showHint, setShowHint] = React.useState(false);
@@ -113,46 +135,54 @@ function FlashcardGame({
   const card = deck[cardIndex];
   const total = deck.length;
 
-  const handleSubmit = async () => {
+  // "Submit Answer" just locks in the answer locally — no network call yet.
+  // Go expects all answers as a batch at session end, not one by one.
+  const handleSubmit = () => {
     if (!userAnswer.trim() || !card) return;
-
     setSubmitted(true);
-    setIsFeedbackLoading(true);
-    setFeedback(null);
-
-    try {
-      // Send answer to backend
-      const response = await axios.post(`${BASE_URL}/mini-games/submit-answer`, {
-        subject,
-        question: card.question,
-        answer: userAnswer,
-      });
-
-      // Optional AI feedback returned from backend
-      const backendFeedback = response.data.feedback || 'Answer submitted successfully!';
-
-      setFeedback(backendFeedback);
-    } catch (err) {
-      console.error('Failed to submit answer:', err);
-      setFeedback('Could not connect to backend.');
-    } finally {
-      setIsFeedbackLoading(false);
-    }
   };
 
-  const handleNext = () => {
-    const result: CardResult = { card, userAnswer, feedback, isLoading: false };
-    const newResults = [...results, result];
-    setResults(newResults);
-    if (cardIndex + 1 >= total) {
-      onSessionComplete(newResults);
-      setDone(true);
+  const handleNext = async () => {
+    const updated = [...pendingAnswers, { card, userAnswer }];
+    setPendingAnswers(updated);
+
+    const isLast = cardIndex + 1 >= total;
+
+    if (isLast) {
+      // Batch-submit all answers to Go /mini-game/submit-answer
+      setIsSubmitting(true);
+      try {
+        const grades = await submitSession(
+          updated.map((r) => r.card.id),
+          updated.map((r) => r.userAnswer)
+        );
+        const finalResults: CardResult[] = updated.map((r, i) => ({
+          card: r.card,
+          userAnswer: r.userAnswer,
+          feedback: grades[i]?.feedback ?? null,
+          score: grades[i]?.score ?? null,
+          isLoading: false,
+        }));
+        setResults(finalResults);
+        onSessionComplete(finalResults);
+      } catch {
+        const fallback: CardResult[] = updated.map((r) => ({
+          card: r.card,
+          userAnswer: r.userAnswer,
+          feedback: 'Could not reach backend for feedback.',
+          score: null,
+          isLoading: false,
+        }));
+        setResults(fallback);
+        onSessionComplete(fallback);
+      } finally {
+        setIsSubmitting(false);
+        setDone(true);
+      }
     } else {
       setCardIndex((i) => i + 1);
       setUserAnswer('');
       setSubmitted(false);
-      setFeedback(null);
-      setIsFeedbackLoading(false);
       setShowHint(false);
     }
   };
@@ -261,7 +291,7 @@ function FlashcardGame({
                 color: colors.accent,
                 textAlign: 'center',
               }}>
-              Backend: POST /mini-games/subject
+              Backend: GET /mini-game/subject?subject=ENG|MATH|SCI
             </Text>
           </View>
         </LinearGradient>
@@ -283,44 +313,74 @@ function FlashcardGame({
 
   // ── Done screen ──
   if (done) {
-    return (
-      <View className="px-1 pb-10">
-        <LinearGradient
-          colors={gradColors}
-          style={{ borderRadius: 36, padding: 32, alignItems: 'center', marginBottom: 16 }}>
-          <Text style={{ fontSize: 56 }}>✅</Text>
-          <Text className={`${textColor} mt-3 text-2xl font-black`}>Session Complete!</Text>
-          <Text className={`${subText} mt-1 text-center text-sm`}>
-            Your answers have been submitted.{'\n'}Check the Analysis tab for your reflection.
-          </Text>
-        </LinearGradient>
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Pressable
-            onPress={() => {
-              setCardIndex(0);
-              setResults([]);
-              setDone(false);
-              setUserAnswer('');
-              setSubmitted(false);
-              setFeedback(null);
-              setShowHint(false);
-            }}
-            style={{
-              flex: 1,
-              borderRadius: 999,
-              paddingVertical: 18,
-              alignItems: 'center',
-              backgroundColor: colors.accent,
-            }}>
-            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Play Again</Text>
-          </Pressable>
-          <Pressable
-            onPress={onBack}
-            className={`flex-1 items-center rounded-full py-[18px] ${isLight ? 'bg-zinc-100' : 'bg-zinc-900'}`}>
-            <Text className={`${textColor} text-sm font-black`}>Back</Text>
-          </Pressable>
+    if (isSubmitting) {
+      return (
+        <View className="px-1 pb-10" style={{ alignItems: 'center', paddingTop: 48 }}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text className={`${textColor} mt-5 text-lg font-black`}>Grading your answers...</Text>
+          <Text className={`${subText} mt-2 text-center text-sm`}>AI is reviewing your session.</Text>
         </View>
-      </View>
+      );
+    }
+    return (
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View className="px-1 pb-10">
+          <LinearGradient
+            colors={gradColors}
+            style={{ borderRadius: 36, padding: 32, alignItems: 'center', marginBottom: 16 }}>
+            <Text style={{ fontSize: 56 }}>✅</Text>
+            <Text className={`${textColor} mt-3 text-2xl font-black`}>Session Complete!</Text>
+            <Text className={`${subText} mt-1 text-center text-sm`}>Here's your AI reflection.</Text>
+          </LinearGradient>
+
+          <View style={{ gap: 12, marginBottom: 16 }}>
+            {results.map((r, i) => (
+              <View key={i} style={{ borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: isLight ? '#e4e4e7' : '#27272a' }}>
+                <View style={{ padding: 14, backgroundColor: isLight ? '#fafafa' : '#18181b' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, color: '#6366f1', marginBottom: 4 }}>Q{i + 1}</Text>
+                  <Text className={`${textColor} text-sm font-bold`}>{r.card.question}</Text>
+                </View>
+                <View style={{ padding: 14, borderTopWidth: 1, borderTopColor: isLight ? '#e4e4e7' : '#27272a', backgroundColor: isLight ? '#f4f4f5' : '#27272a' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, color: isLight ? '#a1a1aa' : '#71717a', marginBottom: 4 }}>Your Answer</Text>
+                  <Text className={`${textColor} text-xs leading-relaxed`}>{r.userAnswer || '—'}</Text>
+                </View>
+                <View style={{ padding: 14, borderTopWidth: 1, borderTopColor: isLight ? '#e4e4e7' : '#27272a', backgroundColor: isLight ? '#f0fdf4' : '#052e16' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, color: '#22c55e' }}>AI Reflection</Text>
+                    {r.score !== null && (
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: colors.accent }}>{r.score}/5</Text>
+                    )}
+                  </View>
+                  <Text style={{ color: isLight ? '#14532d' : '#bbf7d0', fontSize: 13, lineHeight: 20 }}>
+                    {r.feedback ?? 'No feedback received.'}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Pressable
+              onPress={() => {
+                setCardIndex(0);
+                setResults([]);
+                setPendingAnswers([]);
+                setDone(false);
+                setUserAnswer('');
+                setSubmitted(false);
+                setShowHint(false);
+              }}
+              style={{ flex: 1, borderRadius: 999, paddingVertical: 18, alignItems: 'center', backgroundColor: colors.accent }}>
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Play Again</Text>
+            </Pressable>
+            <Pressable
+              onPress={onBack}
+              className={`flex-1 items-center rounded-full py-[18px] ${isLight ? 'bg-zinc-100' : 'bg-zinc-900'}`}>
+              <Text className={`${textColor} text-sm font-black`}>Back</Text>
+            </Pressable>
+          </View>
+        </View>
+      </ScrollView>
     );
   }
 
@@ -472,7 +532,7 @@ function FlashcardGame({
                   fontWeight: '900',
                   fontSize: 15,
                 }}>
-                {isFeedbackLoading ? 'Submitting...' : 'Submit Answer'}
+                {'Submit Answer'}
               </Text>
             </Pressable>
           </>
@@ -488,50 +548,21 @@ function FlashcardGame({
               </Text>
             </View>
 
-            {/* AI Feedback — from backend */}
+            {/* AI feedback is collected at session end — tell the user */}
             <View
               style={{
                 borderRadius: 28,
                 padding: 16,
                 marginBottom: 16,
-                backgroundColor: isLight ? '#f0fdf4' : '#052e16',
-                borderWidth: 1,
-                borderColor: isLight ? '#bbf7d0' : '#14532d',
+                backgroundColor: isLight ? '#f4f4f5' : '#18181b',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
               }}>
-              <Text
-                style={{
-                  fontSize: 10,
-                  fontWeight: '800',
-                  textTransform: 'uppercase',
-                  letterSpacing: 1,
-                  color: '#22c55e',
-                  marginBottom: 8,
-                }}>
-                AI Reflection
+              <Text style={{ fontSize: 18 }}>🧠</Text>
+              <Text style={{ color: isLight ? '#71717a' : '#a1a1aa', fontSize: 13, fontStyle: 'italic', flex: 1 }}>
+                AI reflection will appear at the end of the session.
               </Text>
-              {isFeedbackLoading ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color="#22c55e" />
-                  <Text style={{ color: '#22c55e', fontSize: 13, fontStyle: 'italic' }}>
-                    Analyzing your answer...
-                  </Text>
-                </View>
-              ) : feedback ? (
-                <Text
-                  style={{ color: isLight ? '#14532d' : '#bbf7d0', fontSize: 14, lineHeight: 22 }}>
-                  {feedback}
-                </Text>
-              ) : (
-                <Text
-                  style={{
-                    color: isLight ? '#166534' : '#86efac',
-                    fontSize: 13,
-                    fontStyle: 'italic',
-                    opacity: 0.6,
-                  }}>
-                  Feedback will appear here once the backend is connected.
-                </Text>
-              )}
             </View>
 
             <Pressable
@@ -543,7 +574,7 @@ function FlashcardGame({
                 backgroundColor: colors.accent,
               }}>
               <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>
-                {cardIndex + 1 >= total ? 'Finish Session →' : 'Next Card →'}
+                {isSubmitting ? 'Grading...' : cardIndex + 1 >= total ? 'Finish Session →' : 'Next Card →'}
               </Text>
             </Pressable>
           </>
