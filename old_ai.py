@@ -58,7 +58,7 @@ def generate_questions(data: str, amount: int, concept : str) -> list[dict]:
     output = []
     for _ in range(amount):
         # Using your existing logic to pair a question with a solution
-        q = question_agent(data+": "+concept)
+        q = question_agent(data+" "+ "Concept to test user on: " + concept)
         s = solution_agent(q)
         middle = {"question": q, "answer": s, "id" : str(uuid.uuid4())}
         output.append(middle.copy())
