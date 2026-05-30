@@ -6,8 +6,8 @@ This is a project that's being built to complete school hackason with topic "edu
 Our first project!!!
 
 ## 🛠️ Tech Stack & Architecture
-*   **Backend:** Python & Flask (RESTful Routing, Session Management)
-*   **Frontend:** HTML5, CSS3, JavaScript (Clean, responsive user interface)
+*   **Backend:** Python & Flask, GO (RESTful Routing, Session Management)
+*   **Frontend:** TypeScript, JavaScript (Clean, responsive user interface)
 *   **Version Control:** Git & GitHub (Agile collaboration)
 
 ## ✨ Core Features
